@@ -19,8 +19,8 @@ import (
 )
 
 var (
-	number, recv  uint64
-	isCycled      bool
+	number, numberGot, recv  uint64
+	isCycled, useNumber      bool
 	testDoneEvent *sync.Cond
 )
 
@@ -111,15 +111,22 @@ func main() {
 		eachOutPortConfig mapFlags
 		eachInPortConfig  listFlags
 	)
-	flag.Uint64Var(&number, "number", 10000000, "stop after generated number")
+	flag.Uint64Var(&number, "number", 0, "stop after generated number")
+	flag.Uint64Var(&numberGot, "numberGot", 10000000, "stop after got number")
 	flag.BoolVar(&isCycled, "cycle", false, "cycle execution")
 	flag.Uint64Var(&speed, "speed", 6000000, "speed of fast generator, Pkts/s")
 	flag.Var(&eachOutPortConfig, "outConfig", "specifies config per port portNum or file: 'path', 'pcapOut': 'path2'. For example: 1: 'ip4.json', 'mix.pcap': 'mix.json'")
 	flag.Var(&eachInPortConfig, "inConfig", "specifies input ports and files 'path', portNum2, 'path2'. For example: 1, 'ip4.pcap', 0, 'mix.pcap'")
 	flag.Parse()
-
+	g := generator.GetGenerator()
+	if number != 0 {
+		useNumber = true
+		g.SetGenerateNumber(number)
+	}
 	// Init NFF-GO system at 16 available cores
-	config := flow.Config{}
+	config := flow.Config{
+		CPUList: "0-43",
+	}
 	flow.CheckFatal(flow.SystemInit(&config))
 
 	testDoneEvent = sync.NewCond(&m)
@@ -168,11 +175,14 @@ func main() {
 		flow.CheckFatal(flow.SystemStart())
 	}()
 
-	g := generator.GetGenerator()
 	go func() {
 		for {
-			println("Sent/Got", g.GetGeneratedNumber(), "/", atomic.LoadUint64(&recv), "packets")
-			time.Sleep(time.Second * 5)
+			send := g.GetGeneratedNumber()
+			if useNumber && send >= number {
+				testDoneEvent.Signal()
+			}
+			println("Sent/Got", send, "/", atomic.LoadUint64(&recv), "packets")
+			time.Sleep(time.Second)
 		}
 	}()
 
@@ -183,12 +193,13 @@ func main() {
 	println("Sent/Got", g.GetGeneratedNumber(), "/", atomic.LoadUint64(&recv), "packets")
 }
 
+
 func handleRecv(currentPacket *packet.Packet, context flow.UserContext) {
 	got := atomic.AddUint64(&recv, 1)
 	if isCycled {
 		return
 	}
-	if got >= number {
+	if got >= numberGot {
 		time.Sleep(time.Second)
 		testDoneEvent.Signal()
 	}

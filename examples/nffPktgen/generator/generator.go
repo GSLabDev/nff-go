@@ -316,14 +316,15 @@ func generateIP(pkt *packet.Packet, config *PacketConfig, rnd *rand.Rand) {
 		panic(fmt.Sprintf("fillPacketl3 failed, unknovn version %d", l3.Version))
 	}
 	copy((*[1 << 30]uint8)(pkt.Data)[0:size], data)
-	if err := fillIPHdr(pkt, &l3); err != nil {
-		panic(fmt.Sprintf("failed to fill ip header %v", err))
-	}
 	if err := fillEtherHdr(pkt, &l2); err != nil {
 		panic(fmt.Sprintf("failed to fill ether header %v", err))
 	}
+	if err := fillIPHdr(pkt, &l3); err != nil {
+		panic(fmt.Sprintf("failed to fill ip header %v", err))
+	}
 	if l3.Version == 4 {
-		pkt.GetIPv4CheckVLAN().HdrChecksum = packet.SwapBytesUint16(packet.CalculateIPv4Checksum(pkt.GetIPv4CheckVLAN()))
+		pktIP := (*packet.IPv4Hdr)(pkt.L3)
+		pktIP.HdrChecksum = packet.SwapBytesUint16(packet.CalculateIPv4Checksum(pktIP))
 	}
 	l2.Data = l3
 	config.Data = l2
@@ -404,20 +405,23 @@ func generateTCPIP(pkt *packet.Packet, config *PacketConfig, rnd *rand.Rand) {
 		panic(fmt.Sprintf("fill packet l4 failed, unknovn version %d", l3.Version))
 	}
 	copy((*[1 << 30]uint8)(pkt.Data)[0:size], data)
-	if err := fillTCPHdr(pkt, &l4, rnd); err != nil {
-		panic(fmt.Sprintf("failed to fill tcp header %v", err))
+	if err := fillEtherHdr(pkt, &l2); err != nil {
+		panic(fmt.Sprintf("failed to fill ether header %v", err))
 	}
 	if err := fillIPHdr(pkt, &l3); err != nil {
 		panic(fmt.Sprintf("failed to fill ip header %v", err))
 	}
-	if err := fillEtherHdr(pkt, &l2); err != nil {
-		panic(fmt.Sprintf("failed to fill ether header %v", err))
+	if err := fillTCPHdr(pkt, &l4, rnd); err != nil {
+		panic(fmt.Sprintf("failed to fill tcp header %v", err))
 	}
+	pktTCP := (*packet.TCPHdr)(pkt.L4)
 	if l3.Version == 4 {
-		pkt.GetIPv4CheckVLAN().HdrChecksum = packet.SwapBytesUint16(packet.CalculateIPv4Checksum(pkt.GetIPv4CheckVLAN()))
-		pkt.GetTCPForIPv4().Cksum = packet.SwapBytesUint16(packet.CalculateIPv4TCPChecksum(pkt.GetIPv4CheckVLAN(), pkt.GetTCPForIPv4(), pkt.Data))
+		pktIP := (*packet.IPv4Hdr)(pkt.L3)
+		pktIP.HdrChecksum = packet.SwapBytesUint16(packet.CalculateIPv4Checksum(pktIP))
+		pktTCP.Cksum = packet.SwapBytesUint16(packet.CalculateIPv4TCPChecksum(pktIP, pktTCP, pkt.Data))
 	} else if l3.Version == 6 {
-		pkt.GetTCPForIPv6().Cksum = packet.SwapBytesUint16(packet.CalculateIPv6TCPChecksum(pkt.GetIPv6CheckVLAN(), pkt.GetTCPForIPv6(), pkt.Data))
+		pktIP := (*packet.IPv6Hdr)(pkt.L3)
+		pktTCP.Cksum = packet.SwapBytesUint16(packet.CalculateIPv6TCPChecksum(pktIP, pktTCP, pkt.Data))
 	}
 	l3.Data = l4
 	l2.Data = l3
@@ -451,20 +455,23 @@ func generateUDPIP(pkt *packet.Packet, config *PacketConfig, rnd *rand.Rand) {
 		panic(fmt.Sprintf("fill packet l4 failed, unknovn version %d", l3.Version))
 	}
 	copy((*[1 << 30]uint8)(pkt.Data)[0:size], data)
-	if err := fillUDPHdr(pkt, &l4); err != nil {
-		panic(fmt.Sprintf("failed to fill udp header %v", err))
+	if err := fillEtherHdr(pkt, &l2); err != nil {
+		panic(fmt.Sprintf("failed to fill ether header %v", err))
 	}
 	if err := fillIPHdr(pkt, &l3); err != nil {
 		panic(fmt.Sprintf("failed to fill ip header %v", err))
 	}
-	if err := fillEtherHdr(pkt, &l2); err != nil {
-		panic(fmt.Sprintf("failed to fill ether header %v", err))
+	if err := fillUDPHdr(pkt, &l4); err != nil {
+		panic(fmt.Sprintf("failed to fill udp header %v", err))
 	}
+	pktUDP := (*packet.UDPHdr)(pkt.L4)
 	if l3.Version == 4 {
-		pkt.GetIPv4CheckVLAN().HdrChecksum = packet.SwapBytesUint16(packet.CalculateIPv4Checksum(pkt.GetIPv4CheckVLAN()))
-		pkt.GetUDPForIPv4().DgramCksum = packet.SwapBytesUint16(packet.CalculateIPv4UDPChecksum(pkt.GetIPv4CheckVLAN(), pkt.GetUDPForIPv4(), pkt.Data))
+		pktIP := (*packet.IPv4Hdr)(pkt.L3)
+		pktIP.HdrChecksum = packet.SwapBytesUint16(packet.CalculateIPv4Checksum(pktIP))
+		pktUDP.DgramCksum = packet.SwapBytesUint16(packet.CalculateIPv4UDPChecksum(pktIP, pktUDP, pkt.Data))
 	} else if l3.Version == 6 {
-		pkt.GetUDPForIPv6().DgramCksum = packet.SwapBytesUint16(packet.CalculateIPv6UDPChecksum(pkt.GetIPv6CheckVLAN(), pkt.GetUDPForIPv6(), pkt.Data))
+		pktIP := (*packet.IPv6Hdr)(pkt.L3)
+		pktUDP.DgramCksum = packet.SwapBytesUint16(packet.CalculateIPv6UDPChecksum(pktIP, pktUDP, pkt.Data))
 	}
 	l3.Data = l4
 	l2.Data = l3
@@ -498,20 +505,23 @@ func generateICMPIP(pkt *packet.Packet, config *PacketConfig, rnd *rand.Rand) {
 		panic(fmt.Sprintf("fill packet l4 failed, unknovn version %d", l3.Version))
 	}
 	copy((*[1 << 30]uint8)(pkt.Data)[0:size], data)
-	if err := fillICMPHdr(pkt, &l4, rnd); err != nil {
-		panic(fmt.Sprintf("failed to fill icmp header %v", err))
+	if err := fillEtherHdr(pkt, &l2); err != nil {
+		panic(fmt.Sprintf("failed to fill ether header %v", err))
 	}
 	if err := fillIPHdr(pkt, &l3); err != nil {
 		panic(fmt.Sprintf("failed to fill ip header %v", err))
 	}
-	if err := fillEtherHdr(pkt, &l2); err != nil {
-		panic(fmt.Sprintf("failed to fill ether header %v", err))
+	if err := fillICMPHdr(pkt, &l4, rnd); err != nil {
+		panic(fmt.Sprintf("failed to fill icmp header %v", err))
 	}
+	pktICMP := (*packet.ICMPHdr)(pkt.L4)
 	if l3.Version == 4 {
-		pkt.GetIPv4CheckVLAN().HdrChecksum = packet.SwapBytesUint16(packet.CalculateIPv4Checksum(pkt.GetIPv4CheckVLAN()))
-		pkt.GetICMPForIPv4().Cksum = packet.SwapBytesUint16(packet.CalculateIPv4ICMPChecksum(pkt.GetIPv4CheckVLAN(), pkt.GetICMPForIPv4(), pkt.Data))
+		pktIP := (*packet.IPv4Hdr)(pkt.L3)
+		pktIP.HdrChecksum = packet.SwapBytesUint16(packet.CalculateIPv4Checksum(pktIP))
+		pktICMP.Cksum = packet.SwapBytesUint16(packet.CalculateIPv4ICMPChecksum(pktIP, pktICMP, pkt.Data))
 	} else if l3.Version == 6 {
-		pkt.GetICMPForIPv6().Cksum = packet.SwapBytesUint16(packet.CalculateIPv6ICMPChecksum(pkt.GetIPv6CheckVLAN(), pkt.GetICMPForIPv6(), pkt.Data))
+		pktIP := (*packet.IPv6Hdr)(pkt.L3)
+		pktICMP.Cksum = packet.SwapBytesUint16(packet.CalculateIPv6ICMPChecksum(pktIP, pktICMP, pkt.Data))
 	}
 	l3.Data = l4
 	l2.Data = l3
@@ -545,12 +555,12 @@ func fillICMPHdr(pkt *packet.Packet, l4 *ICMPConfig, rnd *rand.Rand) error {
 
 func fillIPHdr(pkt *packet.Packet, l3 *IPConfig) error {
 	if l3.Version == 4 {
-		pktIP := pkt.GetIPv4()
+		pktIP := (*packet.IPv4Hdr)(pkt.L3)
 		pktIP.SrcAddr = binary.LittleEndian.Uint32(net.IP(getNextAddr(&(l3.SAddr))).To4())
 		pktIP.DstAddr = binary.LittleEndian.Uint32(net.IP(getNextAddr(&(l3.DAddr))).To4())
 		return nil
 	}
-	pktIP := pkt.GetIPv6()
+	pktIP := (*packet.IPv6Hdr)(pkt.L3)
 	nextAddr := getNextAddr(&(l3.SAddr))
 	copyAddr(pktIP.SrcAddr[:], nextAddr, common.IPv6AddrLen)
 	nextAddr = getNextAddr(&(l3.DAddr))
